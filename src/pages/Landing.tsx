@@ -218,38 +218,82 @@ function TrackingFlip() {
 }
 
 /**
- * Wireframe gear — one shared geometry (ring, teeth, hub, spokes) used both
- * standalone and inline on the circuit schematic. Spins via --animate-gear /
- * --animate-gear-rev, which the reduced-motion block turns off.
+ * A REAL mechanical gear — not a wireframe.
+ *
+ * The toothed rim is generated from a spur-gear tooth profile on a constant
+ * module: a pitch circle, addendum (tip) and dedendum (root) radii, smooth
+ * S-curve flanks, flat tip lands and root arcs. That sits over an inner rim
+ * ring, a bored hub cut with a keyway, and a web lightened with drilled
+ * holes. Because the module is constant, any two gears mesh visually.
+ * One geometry serves the inline schematic and the standalone gear train.
+ * Spins via --animate-gear / --animate-gear-rev, which the reduced-motion
+ * block turns off.
  */
-function GearShape({ teeth = 9 }: { teeth?: number }) {
+const GEAR_MODULE = 6.4;
+
+/** Pitch / addendum / dedendum radii for a gear of `teeth` teeth. */
+function gearDims(teeth: number) {
+  const pitch = (GEAR_MODULE * teeth) / 2;
+  return {
+    pitch,
+    tip: pitch + GEAR_MODULE,
+    root: pitch - 1.25 * GEAR_MODULE,
+  };
+}
+
+/** Closed outline of the toothed rim: root arcs, flanks and tip lands. */
+function gearTeethPath(teeth: number) {
+  const { tip, root } = gearDims(teeth);
+  const steps = 16; // samples per tooth — smooth at every rendered size
+  const total = teeth * steps;
+  const rise = (x: number) => x * x * (3 - 2 * x);
+  const pts: string[] = [];
+  for (let i = 0; i < total; i++) {
+    // Position inside one tooth period:
+    //   0–.16 rising flank · .16–.34 tip land · .34–.5 falling flank · .5–1 root arc
+    const u = ((i / total) * teeth) % 1;
+    let r = root;
+    if (u < 0.16) r = root + (tip - root) * rise(u / 0.16);
+    else if (u < 0.34) r = tip;
+    else if (u < 0.5) r = tip - (tip - root) * rise((u - 0.34) / 0.16);
+    const a = (i / total) * Math.PI * 2 - Math.PI / 2;
+    pts.push(`${(Math.cos(a) * r).toFixed(2)},${(Math.sin(a) * r).toFixed(2)}`);
+  }
+  return `M${pts.join("L")}Z`;
+}
+
+function GearShape({ teeth = 12 }: { teeth?: number }) {
+  const { root } = gearDims(teeth);
+  const profile = useMemo(() => gearTeethPath(teeth), [teeth]);
+  const rim = root - 7; // inner edge of the rim band
+  const hub = Math.min(13.5, rim - 8); // hub outside diameter
+  const bore = hub * 0.45;
+  const holes = 5;
+  const holeRing = (rim + hub) / 2;
+  const holeR = Math.max(2.4, (rim - hub) / 2 - 2.6);
   return (
-    <g fill="none" stroke="currentColor" strokeLinecap="round">
-      <circle r={30} strokeWidth={5} />
-      <circle r={11} strokeWidth={5} />
-      {Array.from({ length: teeth }, (_, i) => {
-        const a = (i / teeth) * Math.PI * 2 - Math.PI / 2;
+    <g stroke="currentColor" fill="none" strokeLinejoin="round">
+      {/* toothed rim */}
+      <path d={profile} strokeWidth={2.4} fill="currentColor" fillOpacity={0.07} />
+      {/* inner edge of the rim */}
+      <circle r={rim} strokeWidth={2.4} />
+      {/* bored hub, cut with a keyway */}
+      <circle r={hub} strokeWidth={2.4} fill="currentColor" fillOpacity={0.05} />
+      <circle r={bore} strokeWidth={1.8} />
+      <path
+        d={`M${-bore * 0.6} ${-bore} V${-(bore + 3)} H${bore * 0.6} V${-bore}`}
+        strokeWidth={1.8}
+      />
+      {/* web lightening holes */}
+      {Array.from({ length: holes }, (_, i) => {
+        const a = (i / holes) * Math.PI * 2 - Math.PI / 2;
         return (
-          <line
-            key={`t${i}`}
-            x1={Math.cos(a) * 30}
-            y1={Math.sin(a) * 30}
-            x2={Math.cos(a) * 45}
-            y2={Math.sin(a) * 45}
-            strokeWidth={7}
-          />
-        );
-      })}
-      {[0, 1, 2, 3].map((i) => {
-        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-        return (
-          <line
-            key={`s${i}`}
-            x1={Math.cos(a) * 11}
-            y1={Math.sin(a) * 11}
-            x2={Math.cos(a) * 30}
-            y2={Math.sin(a) * 30}
-            strokeWidth={4}
+          <circle
+            key={`h${i}`}
+            cx={Number((Math.cos(a) * holeRing).toFixed(2))}
+            cy={Number((Math.sin(a) * holeRing).toFixed(2))}
+            r={holeR}
+            strokeWidth={1.8}
           />
         );
       })}
@@ -257,35 +301,47 @@ function GearShape({ teeth = 9 }: { teeth?: number }) {
   );
 }
 
-function Gear({ className }: { className?: string }) {
+function Gear({ className, teeth = 12 }: { className?: string; teeth?: number }) {
+  const { tip } = gearDims(teeth);
+  // Size the box to the actual gear so no tooth count ever gets clipped.
+  const half = Math.ceil(tip + 2);
   return (
-    <svg viewBox="-50 -50 100 100" fill="none" className={className} aria-hidden>
-      <GearShape />
+    <svg
+      viewBox={`${-half} ${-half} ${half * 2} ${half * 2}`}
+      fill="none"
+      className={className}
+      aria-hidden
+    >
+      <GearShape teeth={teeth} />
     </svg>
   );
 }
 
 /**
  * The signature separator: a PCB schematic that solders itself together as
- * it scrolls into view — resistor zigzag, right-angle jogs, vias, junction
- * pads, an IC chip, and gears driving the bus at both ends. After the draw,
- * TWO glowing signals run the wire in opposite directions, forever.
+ * it scrolls into view — a resistor zigzag, right-angle jogs, corner vias,
+ * junction pads, a shunt capacitor to ground, and a real IC package whose
+ * gull-wing leads end on proper solder pads on the bus. A mechanical gear
+ * drives each end. After the draw, TWO glowing signals run the wire in
+ * opposite directions, forever.
  */
 const TRACE_D =
-  "M64 32 H150 l9 -11 l9 22 l9 -22 l9 22 l9 -11 H300 V52 H360 V32 H600 V14 H660 V32 H736";
+  "M64 64 H150 l9 -12 l9 24 l9 -24 l9 24 l9 -12 H300 V82 H364 V64 H600 V42 H660 V64 H736";
+
+/** Lead positions for the IC — each lands on its own solder pad on the bus. */
+const IC_LEADS = [478, 494, 510, 526];
 
 function CircuitTrace({ className, reverse = false }: { className?: string; reverse?: boolean }) {
-  const pads: [number, number][] = [
-    [240, 32],
-    [420, 32],
-  ];
+  const pads: [number, number][] = [[420, 64]];
   const rings: [number, number][] = [
-    [240, 56],
-    [420, 10],
+    [240, 40],
+    [420, 86],
   ];
   const vias: [number, number][] = [
-    [300, 52],
-    [660, 14],
+    [300, 82],
+    [364, 82],
+    [600, 42],
+    [660, 42],
   ];
   const inView = { once: true, margin: "-60px" } as const;
   const pop = (i: number) => ({
@@ -298,13 +354,14 @@ function CircuitTrace({ className, reverse = false }: { className?: string; reve
 
   return (
     <div className={cn("relative z-10 mx-auto w-full max-w-5xl px-6", className)} aria-hidden>
-      <svg viewBox="0 0 800 72" fill="none" className="w-full text-primary">
+      <svg viewBox="0 0 800 96" fill="none" className="w-full text-primary">
         {/* the bus draws itself, left to right */}
         <motion.path
           d={TRACE_D}
           stroke="currentColor"
           strokeOpacity={0.5}
           strokeWidth={2}
+          strokeLinejoin="round"
           initial={{ pathLength: 0, opacity: 0 }}
           whileInView={{ pathLength: 1, opacity: 1 }}
           viewport={inView}
@@ -313,7 +370,7 @@ function CircuitTrace({ className, reverse = false }: { className?: string; reve
 
         {/* branch stubs with pads — drawn after the bus reaches them */}
         <motion.path
-          d="M240 32 V56"
+          d="M240 64 V40"
           stroke="currentColor"
           strokeOpacity={0.5}
           strokeWidth={2}
@@ -323,7 +380,7 @@ function CircuitTrace({ className, reverse = false }: { className?: string; reve
           transition={{ duration: 0.4, delay: 0.9 }}
         />
         <motion.path
-          d="M420 32 V10"
+          d="M420 64 V86"
           stroke="currentColor"
           strokeOpacity={0.5}
           strokeWidth={2}
@@ -333,24 +390,66 @@ function CircuitTrace({ className, reverse = false }: { className?: string; reve
           transition={{ duration: 0.4, delay: 1.15 }}
         />
 
-        {/* IC chip riding the bus, with pins */}
+        {/* shunt capacitor to ground — plates, leads and a ground symbol */}
+        <motion.g {...pop(6)} stroke="currentColor" strokeWidth={2} strokeOpacity={0.75}>
+          <path d="M580 64 V74" />
+          <path d="M571 74 H589" strokeWidth={2.6} />
+          <path d="M571 78 H589" strokeWidth={2.6} />
+          <path d="M580 78 V87" />
+          <path d="M573 87 H587" />
+          <path d="M576 90 H584" />
+          <path d="M579 93 H581" />
+        </motion.g>
+
+        {/* IC package: body, pin-1 index, gull-wing leads into solder pads */}
         <motion.g {...pop(0)}>
           <rect
-            x={450}
-            y={16}
-            width={60}
-            height={32}
-            rx={7}
+            x={468}
+            y={8}
+            width={64}
+            height={30}
+            rx={4}
             fill="currentColor"
-            fillOpacity={0.08}
+            fillOpacity={0.1}
             stroke="currentColor"
-            strokeOpacity={0.7}
+            strokeOpacity={0.78}
             strokeWidth={2}
           />
-          {[462, 478, 494].map((x) => (
-            <g key={x} stroke="currentColor" strokeWidth={2} strokeOpacity={0.7}>
-              <line x1={x} y1={10} x2={x} y2={16} />
-              <line x1={x} y1={48} x2={x} y2={54} />
+          <circle cx={478} cy={18} r={2.2} fill="currentColor" fillOpacity={0.7} />
+          <text
+            x={502}
+            y={31}
+            fontSize={8}
+            fontFamily="monospace"
+            textAnchor="middle"
+            fill="currentColor"
+            opacity={0.6}
+          >
+            RC-01
+          </text>
+          {IC_LEADS.map((x) => (
+            <g key={x}>
+              <line
+                x1={x}
+                y1={38}
+                x2={x}
+                y2={54}
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeOpacity={0.85}
+              />
+              <rect
+                x={x - 3.5}
+                y={54}
+                width={7}
+                height={10}
+                rx={1.4}
+                fill="currentColor"
+                fillOpacity={0.18}
+                stroke="currentColor"
+                strokeOpacity={0.85}
+                strokeWidth={1.6}
+              />
             </g>
           ))}
         </motion.g>
@@ -380,7 +479,7 @@ function CircuitTrace({ className, reverse = false }: { className?: string; reve
         {/* schematic annotations */}
         <motion.text
           x={70}
-          y={16}
+          y={50}
           fontSize={10}
           fontFamily="monospace"
           fill="currentColor"
@@ -393,8 +492,37 @@ function CircuitTrace({ className, reverse = false }: { className?: string; reve
           RC-BUS
         </motion.text>
         <motion.text
+          x={568}
+          y={40}
+          fontSize={9}
+          fontFamily="monospace"
+          fill="currentColor"
+          opacity={0.55}
+          textAnchor="end"
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 0.55 }}
+          viewport={inView}
+          transition={{ delay: 1.6 }}
+        >
+          U1
+        </motion.text>
+        <motion.text
+          x={596}
+          y={92}
+          fontSize={9}
+          fontFamily="monospace"
+          fill="currentColor"
+          opacity={0.55}
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 0.55 }}
+          viewport={inView}
+          transition={{ delay: 1.7 }}
+        >
+          GND
+        </motion.text>
+        <motion.text
           x={736}
-          y={16}
+          y={50}
           fontSize={10}
           fontFamily="monospace"
           fill="currentColor"
@@ -408,15 +536,15 @@ function CircuitTrace({ className, reverse = false }: { className?: string; reve
           I²C
         </motion.text>
 
-        {/* gears driving the bus at both ends (meshed ratios: big → small) */}
-        <g transform="translate(36 32)">
+        {/* mechanical gears driving the bus at both ends (meshed module) */}
+        <g transform="translate(30 64) scale(0.55)">
           <g className="animate-gear [transform-box:fill-box] [transform-origin:center]">
-            <GearShape />
+            <GearShape teeth={12} />
           </g>
         </g>
-        <g transform="translate(764 32)">
+        <g transform="translate(768 64) scale(0.6)">
           <g className="animate-gear-rev [transform-box:fill-box] [transform-origin:center]">
-            <GearShape teeth={7} />
+            <GearShape teeth={9} />
           </g>
         </g>
 
@@ -2074,14 +2202,14 @@ function CtaSection({ onPrimary, label }: { onPrimary: () => void; label: string
         aria-hidden
         className="pointer-events-none absolute -left-16 -top-20 hidden text-primary/15 md:block"
       >
-        <Gear className="animate-gear size-52" />
+        <Gear className="animate-gear size-52" teeth={16} />
       </div>
       <div
         aria-hidden
         className="pointer-events-none absolute -bottom-24 -right-12 hidden items-end text-primary/12 md:flex"
       >
-        <Gear className="animate-gear size-44" />
-        <Gear className="animate-gear-rev -ml-12 size-28" />
+        <Gear className="animate-gear size-44" teeth={11} />
+        <Gear className="animate-gear-rev -ml-12 size-28" teeth={7} />
       </div>
         <div className="relative mx-auto flex size-16 items-center justify-center">
           <span className="absolute inset-0 animate-ping-ring rounded-2xl border border-primary/50" />
