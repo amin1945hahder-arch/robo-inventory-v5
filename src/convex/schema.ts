@@ -349,6 +349,7 @@ const schema = defineSchema(
         v.literal("epic"),
         v.literal("user_story"),
         v.literal("milestone"),
+        v.literal("phase"),
       ),
       subject: v.string(),
       description: v.optional(v.string()),
@@ -384,13 +385,20 @@ const schema = defineSchema(
       estimatedHours: v.optional(v.number()),
       remainingHours: v.optional(v.number()),
       storyPoints: v.optional(v.number()),
-      // Release goal / milestone (the Roadmap "Version").
+      // Release goal / milestone (the Roadmap "Version") and the Backlogs
+      // sprint the package is planned into.
       versionId: v.optional(v.id("projectVersions")),
+      sprintId: v.optional(v.id("wpSprints")),
       category: v.optional(v.string()),
       // Single parent — OpenProject's strict hierarchy (no multiple parents).
       parentId: v.optional(v.id("workPackages")),
       // Manual order inside a board column / the flat list.
       position: v.number(),
+      // Scheduling mode (OpenProject 15.4+): automatic derives dates from
+      // predecessors and children; manual keeps whatever the user set.
+      scheduling: v.optional(v.union(v.literal("manual"), v.literal("automatic"))),
+      // Custom-field values keyed by wpCustomFields id (stringified).
+      customFields: v.optional(v.record(v.string(), v.union(v.string(), v.number(), v.boolean()))),
       createdAt: v.number(),
       updatedAt: v.number(),
       closedAt: v.optional(v.number()),
@@ -399,6 +407,7 @@ const schema = defineSchema(
       .index("by_project", ["projectId"])
       .index("by_assignee", ["assigneeId"])
       .index("by_parent", ["parentId"])
+      .index("by_sprint", ["sprintId"])
       .index("by_updatedAt", ["updatedAt"]),
 
     // The Activity journal: comments AND change sets, exactly like
@@ -490,6 +499,104 @@ const schema = defineSchema(
     })
       .index("by_wp", ["workPackageId"])
       .index("by_project", ["projectId"]),
+
+    // Per-project work-package settings (OpenProject administers these
+    // instance-wide; here each project owns its configuration):
+    //  - progressMode:   "work_based" | "status_based"
+    //  - scheduling:     default for new packages ("manual" | "automatic")
+    //  - workingDaysOnly: skip weekends when scheduling
+    //  - workflow:       the from×to triples allowed per work-package type
+    wpSettings: defineTable({
+      projectId: v.id("projects"),
+      progressMode: v.union(v.literal("work_based"), v.literal("status_based")),
+      scheduling: v.union(v.literal("manual"), v.literal("automatic")),
+      workingDaysOnly: v.boolean(),
+      workflow: v.array(
+        v.object({
+          type: v.string(),
+          from: v.string(),
+          to: v.string(),
+        }),
+      ),
+      updatedBy: v.id("users"),
+      updatedAt: v.number(),
+    }).index("by_project", ["projectId"]),
+
+    // Sprints (the Backlogs module): named timeboxes a package is planned into.
+    wpSprints: defineTable({
+      projectId: v.id("projects"),
+      name: v.string(),
+      goal: v.optional(v.string()),
+      status: v.union(v.literal("open"), v.literal("active"), v.literal("closed")),
+      startAt: v.optional(v.number()),
+      finishAt: v.optional(v.number()),
+      position: v.number(),
+      createdBy: v.id("users"),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_project", ["projectId"])
+      .index("by_project_status", ["projectId", "status"]),
+
+    // Saved baselines: a snapshot of the tracked fields at a point in time so
+    // the table can be compared against it (added / removed / changed).
+    wpBaselines: defineTable({
+      projectId: v.id("projects"),
+      name: v.string(),
+      snapshot: v.array(
+        v.object({
+          id: v.string(),
+          subject: v.string(),
+          status: v.string(),
+          priority: v.string(),
+          assigneeId: v.optional(v.string()),
+          doneRatio: v.number(),
+          storyPoints: v.optional(v.number()),
+          startAt: v.optional(v.number()),
+          finishAt: v.optional(v.number()),
+          updatedAt: v.number(),
+        }),
+      ),
+      createdBy: v.id("users"),
+      createdAt: v.number(),
+    }).index("by_project", ["projectId"]),
+
+    // Custom fields: definable per project, activatable per work-package type
+    // (OpenProject's "Custom fields for work packages").
+    wpCustomFields: defineTable({
+      projectId: v.id("projects"),
+      name: v.string(),
+      fieldFormat: v.union(
+        v.literal("text"),
+        v.literal("long_text"),
+        v.literal("int"),
+        v.literal("float"),
+        v.literal("bool"),
+        v.literal("date"),
+        v.literal("list"),
+      ),
+      possibleValues: v.optional(v.array(v.string())),
+      types: v.array(v.string()),
+      position: v.number(),
+      createdBy: v.id("users"),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_project", ["projectId"]),
+
+    // Saved queries (OpenProject "Work packages → Saved views"): a named filter
+    // + columns + grouping configuration, private or shared with the project.
+    wpQueries: defineTable({
+      projectId: v.id("projects"),
+      name: v.string(),
+      ownerId: v.id("users"),
+      shared: v.boolean(),
+      // Serialized view config (filters, columns, sort, groupBy, view mode).
+      config: v.string(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_project", ["projectId"])
+      .index("by_owner", ["ownerId"]),
 
     // ===== Project README (GitHub-style project front page) =====
     // The rendered document itself — one row per project, versioned on save.

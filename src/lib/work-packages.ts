@@ -469,12 +469,20 @@ export function wpScheduleAfterPredecessors(
   return { startAt: start, finishAt: wpAddWorkingDays(start, duration) };
 }
 
-/** Dates for an AUTOMATICALLY scheduled parent: span of its children. */
+/**
+ * Dates for an AUTOMATICALLY scheduled parent: the span of its children. A
+ * child that only knows one of its two dates still bounds the span with it
+ * (a milestone-style child has a single date and must not be swallowed).
+ */
 export function wpDeriveParentDates(
   children: { startAt?: number; finishAt?: number }[],
 ): { startAt?: number; finishAt?: number } {
-  const starts = children.map((c) => c.startAt).filter((v): v is number => v !== undefined);
-  const finishes = children.map((c) => c.finishAt).filter((v): v is number => v !== undefined);
+  const starts = children
+    .map((c) => c.startAt ?? c.finishAt)
+    .filter((v): v is number => v !== undefined);
+  const finishes = children
+    .map((c) => c.finishAt ?? c.startAt)
+    .filter((v): v is number => v !== undefined);
   if (starts.length === 0 && finishes.length === 0) return {};
   const startAt = starts.length > 0 ? Math.min(...starts) : undefined;
   const finishAt = finishes.length > 0 ? Math.max(...finishes) : undefined;

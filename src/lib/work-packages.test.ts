@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  WP_BOARD_MODES,
+  WP_BOARD_MODE_LABEL,
+  WP_CUSTOM_FIELD_FORMATS,
+  WP_CUSTOM_FIELD_FORMAT_LABEL,
   WP_DEFAULT_TRANSITIONS,
+  WP_GROUP_BY,
+  WP_GROUP_LABEL,
   WP_PRIORITIES,
+  WP_PROGRESS_MODES,
+  WP_PROGRESS_MODE_HINT,
+  WP_PROGRESS_MODE_LABEL,
+  WP_SCHEDULING_LABEL,
+  WP_SCHEDULING_MODES,
+  WP_SPRINT_STATUSES,
+  WP_SPRINT_STATUS_LABEL,
+  WP_VIEWS,
+  WP_VIEW_META,
   WP_PRIORITY_META,
   WP_RELATION_META,
   WP_RELATION_TYPES,
@@ -88,6 +103,33 @@ describe("type and priority vocabulary", () => {
   });
 });
 
+describe("configuration vocabulary", () => {
+  it("gives every configurable option a label (the UI indexes these maps)", () => {
+    for (const v of WP_VIEWS) expect(WP_VIEW_META[v]?.label.length).toBeGreaterThan(0);
+    for (const m of WP_BOARD_MODES) expect(WP_BOARD_MODE_LABEL[m].length).toBeGreaterThan(0);
+    for (const m of WP_PROGRESS_MODES) {
+      expect(WP_PROGRESS_MODE_LABEL[m].length).toBeGreaterThan(0);
+      expect(WP_PROGRESS_MODE_HINT[m].length).toBeGreaterThan(0);
+    }
+    for (const m of WP_SCHEDULING_MODES) {
+      expect(WP_SCHEDULING_LABEL[m].length).toBeGreaterThan(0);
+    }
+    for (const s of WP_SPRINT_STATUSES) {
+      expect(WP_SPRINT_STATUS_LABEL[s].length).toBeGreaterThan(0);
+    }
+    for (const f of WP_CUSTOM_FIELD_FORMATS) {
+      expect(WP_CUSTOM_FIELD_FORMAT_LABEL[f].length).toBeGreaterThan(0);
+    }
+    for (const g of WP_GROUP_BY) expect(WP_GROUP_LABEL[g].length).toBeGreaterThan(0);
+  });
+
+  it("defines a default transition list for every status", () => {
+    for (const s of WP_STATUSES) {
+      expect(Array.isArray(WP_DEFAULT_TRANSITIONS[s])).toBe(true);
+    }
+  });
+});
+
 describe("relations", () => {
   it("names both directions of every relation type", () => {
     for (const t of WP_RELATION_TYPES) {
@@ -162,9 +204,11 @@ describe("workflow defaults", () => {
 
 describe("working-day math", () => {
   it("recognises weekends from the actual weekday", () => {
-    for (const day of [1, 2, 3, 4, 5, 6, 0]) {
-      const t = new Date(2026, 4, 4 + day).getTime(); // covers a full week
-      expect(wpIsWeekend(t)).toBe(day === 0 || day === 6);
+    // 2026-05-04 is a Monday; walk a full week and compare to the real weekday.
+    for (let i = 0; i < 7; i += 1) {
+      const t = new Date(2026, 4, 4 + i).getTime();
+      const weekday = new Date(t).getDay();
+      expect(wpIsWeekend(t)).toBe(weekday === 0 || weekday === 6);
     }
   });
 
@@ -207,7 +251,8 @@ describe("automatic scheduling", () => {
       { startAt: monday, finishAt: friday + 7 * 86_400_000 },
       [{ finishAt: friday, lagDays: 2 }],
     );
-    expect(new Date(out.startAt!).getDay()).toBe(2); // Tuesday
+    // Friday → +1 default working-day gap = Monday, then +2 lag days = Wednesday.
+    expect(new Date(out.startAt!).getDay()).toBe(3); // Wednesday
     expect(wpDurationDays(out.startAt, out.finishAt)).toBe(5);
   });
 
@@ -301,8 +346,9 @@ describe("baseline comparison", () => {
     )!;
     expect(diff.added).toEqual(["wp2"]);
     expect(diff.removed.map((r) => r.id)).toEqual(["wp3"]);
+    // The diff stores the value BEFORE the comparison point (status "new").
     expect(diff.modified.get("wp1")).toEqual({
-      status: "In progress",
+      status: "New",
       doneRatio: "0",
     });
     expect(diff.modified.has("wp2")).toBe(false);
