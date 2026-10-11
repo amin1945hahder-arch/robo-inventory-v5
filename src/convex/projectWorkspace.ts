@@ -135,6 +135,9 @@ export const listSummaries = query({
       .collect();
     const allMembers = await ctx.db.query("projectMembers").collect();
     const allTasks = await ctx.db.query("projectTasks").collect();
+    // Work packages are the OpenProject-style tracking plane; the grid shows
+    // their roll-up next to the missions count so both read on one card.
+    const allWps = (await ctx.db.query("workPackages").collect()).filter((w) => !w.deleted);
 
     const out = [];
     for (const p of projects.sort((a, b) => a.name.localeCompare(b.name))) {
@@ -146,6 +149,8 @@ export const listSummaries = query({
       const ownerIdRow = active.find((m) => m.userId === p.ownerId);
       const ownerRow = leaderRow ?? ownerIdRow ?? null;
       const owner = ownerRow ? await ctx.db.get(ownerRow.userId) : null;
+      const wps = allWps.filter((w) => w.projectId === p._id);
+      const wpDone = wps.filter((w) => w.status === "closed" || w.status === "rejected").length;
       out.push({
         project: p,
         teamSize: active.length,
@@ -153,6 +158,16 @@ export const listSummaries = query({
         taskTotal: tasks.length,
         taskDone: tasks.filter((t) => t.status === "done").length,
         taskDoing: tasks.filter((t) => t.status === "doing" || t.status === "review").length,
+        wpTotal: wps.length,
+        wpDone,
+        wpOpen: wps.length - wpDone,
+        wpOverdue: wps.filter(
+          (w) =>
+            w.status !== "closed" &&
+            w.status !== "rejected" &&
+            w.finishAt !== undefined &&
+            w.finishAt < Date.now(),
+        ).length,
       });
     }
     return out;

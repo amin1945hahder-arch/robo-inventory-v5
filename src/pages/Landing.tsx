@@ -265,12 +265,16 @@ function gearTeethPath(teeth: number) {
 function GearShape({ teeth = 12 }: { teeth?: number }) {
   const { root } = gearDims(teeth);
   const profile = useMemo(() => gearTeethPath(teeth), [teeth]);
-  const rim = root - 7; // inner edge of the rim band
-  const hub = Math.min(13.5, rim - 8); // hub outside diameter
-  const bore = hub * 0.45;
-  const holes = 5;
+  // Every radius is derived from the root circle and clamped, so a small gear
+  // (few teeth) degrades to rim + hub + bore instead of a negative radius.
+  const rim = root - Math.min(7, root * 0.23); // inner edge of the rim band
+  const hub = Math.max(3.5, Math.min(13.5, rim - 6));
+  const bore = Math.max(1.6, hub * 0.45);
+  const keyDepth = Math.min(3, hub - bore - 0.6);
   const holeRing = (rim + hub) / 2;
-  const holeR = Math.max(2.4, (rim - hub) / 2 - 2.6);
+  const holeR = (rim - hub) / 2 - 2.2;
+  const holes = 5;
+  const showHoles = holeR > 1.8;
   return (
     <g stroke="currentColor" fill="none" strokeLinejoin="round">
       {/* toothed rim */}
@@ -280,23 +284,26 @@ function GearShape({ teeth = 12 }: { teeth?: number }) {
       {/* bored hub, cut with a keyway */}
       <circle r={hub} strokeWidth={2.4} fill="currentColor" fillOpacity={0.05} />
       <circle r={bore} strokeWidth={1.8} />
-      <path
-        d={`M${-bore * 0.6} ${-bore} V${-(bore + 3)} H${bore * 0.6} V${-bore}`}
-        strokeWidth={1.8}
-      />
+      {keyDepth > 0.5 && (
+        <path
+          d={`M${-bore * 0.6} ${-bore} V${-(bore + keyDepth)} H${bore * 0.6} V${-bore}`}
+          strokeWidth={1.8}
+        />
+      )}
       {/* web lightening holes */}
-      {Array.from({ length: holes }, (_, i) => {
-        const a = (i / holes) * Math.PI * 2 - Math.PI / 2;
-        return (
-          <circle
-            key={`h${i}`}
-            cx={Number((Math.cos(a) * holeRing).toFixed(2))}
-            cy={Number((Math.sin(a) * holeRing).toFixed(2))}
-            r={holeR}
-            strokeWidth={1.8}
-          />
-        );
-      })}
+      {showHoles &&
+        Array.from({ length: holes }, (_, i) => {
+          const a = (i / holes) * Math.PI * 2 - Math.PI / 2;
+          return (
+            <circle
+              key={`h${i}`}
+              cx={Number((Math.cos(a) * holeRing).toFixed(2))}
+              cy={Number((Math.sin(a) * holeRing).toFixed(2))}
+              r={Number(holeR.toFixed(2))}
+              strokeWidth={1.8}
+            />
+          );
+        })}
     </g>
   );
 }
@@ -537,12 +544,12 @@ function CircuitTrace({ className, reverse = false }: { className?: string; reve
         </motion.text>
 
         {/* mechanical gears driving the bus at both ends (meshed module) */}
-        <g transform="translate(30 64) scale(0.55)">
+        <g transform="translate(38 64) scale(0.55)">
           <g className="animate-gear [transform-box:fill-box] [transform-origin:center]">
             <GearShape teeth={12} />
           </g>
         </g>
-        <g transform="translate(768 64) scale(0.6)">
+        <g transform="translate(760 64) scale(0.6)">
           <g className="animate-gear-rev [transform-box:fill-box] [transform-origin:center]">
             <GearShape teeth={9} />
           </g>

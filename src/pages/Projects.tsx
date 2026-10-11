@@ -29,7 +29,9 @@ import type { Doc } from "@/convex/_generated/dataModel";
 
 type ProjectRow = Doc<"projects">;
 import {
+  AlertTriangle,
   FolderKanban,
+  Layers,
   ListChecks,
   Pencil,
   Plus,
@@ -141,6 +143,8 @@ export default function Projects() {
               {active.map((p) => {
                 const s = summaryOf(p._id);
                 const pct = s && s.taskTotal > 0 ? Math.round((s.taskDone / s.taskTotal) * 100) : 0;
+                const wpPct =
+                  s && s.wpTotal > 0 ? Math.round((s.wpDone / s.wpTotal) * 100) : 0;
                 return (
                   <Card key={p._id} className="group relative overflow-hidden border-border/80 shadow-none transition-colors hover:border-primary/40">
                     {p.imageUrl && (
@@ -203,6 +207,25 @@ export default function Projects() {
                         <p className="flex items-center gap-1 text-[11px] text-primary">
                           <Zap className="size-3" /> {s.taskDoing} in progress
                         </p>
+                      )}
+                      {s && s.wpTotal > 0 && (
+                        <div className="grid gap-1.5 border-t border-border/60 pt-2">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Layers className="size-3" /> {s.wpOpen} open package
+                              {s.wpOpen === 1 ? "" : "s"}
+                            </span>
+                            <span>
+                              {s.wpDone}/{s.wpTotal} closed
+                            </span>
+                          </div>
+                          <Progress value={wpPct} className="h-1.5" />
+                          {s.wpOverdue > 0 && (
+                            <p className="flex items-center gap-1 text-[11px] text-red-400">
+                              <AlertTriangle className="size-3" /> {s.wpOverdue} overdue
+                            </p>
+                          )}
+                        </div>
                       )}
                     </CardContent>
                   </Card>

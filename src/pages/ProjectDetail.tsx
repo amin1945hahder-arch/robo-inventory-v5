@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/AppShell";
 import { ProjectReadmeTab } from "@/components/ProjectReadmeTab";
+import { ProjectWorkPackages } from "@/components/ProjectWorkPackages";
 import { LoadingGif } from "@/components/LoadingGif";
 import { NavArrows } from "@/components/NavArrows";
 import { QrChip } from "@/components/QrChip";
@@ -56,6 +57,7 @@ import {
   BookOpen,
   CheckCircle2,
   ClipboardList,
+  Layers,
   PackageX,
   Pencil,
   Plus,
@@ -73,6 +75,7 @@ const CENTER_KEYS = Object.keys(CENTER_META) as CenterKey[];
 // via .colored-tabs + tabColor in index.css/lib/utils).
 const TAB_COLORS: Record<string, string> = {
   readme: "#818cf8",
+  workpackages: "#60a5fa",
   overview: "#38bdf8",
   mechanical: "#fbbf24",
   electrical: "#facc15",
@@ -307,7 +310,10 @@ export default function ProjectDetail() {
     if (
       t &&
       t !== tab &&
-      (t === "readme" || t === "overview" || (CENTER_KEYS as readonly string[]).includes(t))
+      (t === "readme" ||
+        t === "overview" ||
+        t === "workpackages" ||
+        (CENTER_KEYS as readonly string[]).includes(t))
     ) {
       setTab(t);
     }
@@ -564,6 +570,9 @@ export default function ProjectDetail() {
               <TabsTrigger value="readme" className="flex-none gap-1.5" style={tStyle("readme")}>
                 <BookOpen className="size-3.5" /> README
               </TabsTrigger>
+              <TabsTrigger value="workpackages" className="flex-none gap-1.5" style={tStyle("workpackages")}>
+                <Layers className="size-3.5" /> Work packages
+              </TabsTrigger>
               <TabsTrigger value="overview" className="flex-none" style={tStyle("overview")}>
                 Overview
               </TabsTrigger>
@@ -577,6 +586,14 @@ export default function ProjectDetail() {
             {/* ===== README (GitHub-style project front page) ===== */}
             <div className={tab !== "readme" ? "hidden" : "mt-6"}>
               <ProjectReadmeTab projectId={projectId} projectName={project.name} />
+            </div>
+
+            {/* ===== Work packages (OpenProject-style tracking plane) ===== */}
+            <div className={tab !== "workpackages" ? "hidden" : "mt-6"}>
+              <ProjectWorkPackages
+                projectId={projectId}
+                members={currentMembers.map((m) => ({ userId: m.userId, user: m.user }))}
+              />
             </div>
 
           {/* ===== Overview ===== */}

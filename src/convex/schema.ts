@@ -334,6 +334,163 @@ const schema = defineSchema(
       createdAt: v.number(),
     }).index("by_project", ["projectId"]),
 
+    // ===== Work packages (OpenProject-style tracking) ==================
+    // The professional unit of work: typed, statused, scheduled, prioritised,
+    // hierarchically nested, related to other packages, watched, commented on
+    // and time-tracked. Deliberately separate from `projectTasks` (the simpler
+    // six-center "missions" board) so the existing workspace keeps working.
+    workPackages: defineTable({
+      projectId: v.id("projects"),
+      // Type drives the form and the available workflow, as in OpenProject.
+      type: v.union(
+        v.literal("task"),
+        v.literal("bug"),
+        v.literal("feature"),
+        v.literal("epic"),
+        v.literal("user_story"),
+        v.literal("milestone"),
+      ),
+      subject: v.string(),
+      description: v.optional(v.string()),
+      status: v.union(
+        v.literal("new"),
+        v.literal("in_specification"),
+        v.literal("specified"),
+        v.literal("in_progress"),
+        v.literal("developed"),
+        v.literal("in_testing"),
+        v.literal("tested"),
+        v.literal("test_failed"),
+        v.literal("on_hold"),
+        v.literal("closed"),
+        v.literal("rejected"),
+      ),
+      priority: v.union(
+        v.literal("low"),
+        v.literal("normal"),
+        v.literal("high"),
+        v.literal("immediate"),
+        v.literal("urgent"),
+      ),
+      // Assignee = doing the work; accountable = answerable for delivery.
+      assigneeId: v.optional(v.id("users")),
+      accountableId: v.optional(v.id("users")),
+      authorId: v.id("users"),
+      // Start date / finish date (OpenProject's scheduling fields).
+      startAt: v.optional(v.number()),
+      finishAt: v.optional(v.number()),
+      // Progress tracking: % Complete plus estimated/remaining Work (hours).
+      doneRatio: v.number(),
+      estimatedHours: v.optional(v.number()),
+      remainingHours: v.optional(v.number()),
+      storyPoints: v.optional(v.number()),
+      // Release goal / milestone (the Roadmap "Version").
+      versionId: v.optional(v.id("projectVersions")),
+      category: v.optional(v.string()),
+      // Single parent — OpenProject's strict hierarchy (no multiple parents).
+      parentId: v.optional(v.id("workPackages")),
+      // Manual order inside a board column / the flat list.
+      position: v.number(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+      closedAt: v.optional(v.number()),
+      deleted: v.optional(v.boolean()),
+    })
+      .index("by_project", ["projectId"])
+      .index("by_assignee", ["assigneeId"])
+      .index("by_parent", ["parentId"])
+      .index("by_updatedAt", ["updatedAt"]),
+
+    // The Activity journal: comments AND change sets, exactly like
+    // OpenProject's per-work-package history timeline.
+    wpJournal: defineTable({
+      projectId: v.id("projects"),
+      workPackageId: v.id("workPackages"),
+      authorId: v.id("users"),
+      kind: v.union(v.literal("comment"), v.literal("change")),
+      body: v.optional(v.string()),
+      changes: v.optional(
+        v.array(
+          v.object({
+            field: v.string(),
+            from: v.optional(v.string()),
+            to: v.optional(v.string()),
+          }),
+        ),
+      ),
+      createdAt: v.number(),
+    })
+      .index("by_wp", ["workPackageId"])
+      .index("by_project", ["projectId"]),
+
+    // Relations. Stored once per ordered pair; each side renders its own label
+    // (e.g. blocks / blocked by) from the same row.
+    wpRelations: defineTable({
+      projectId: v.id("projects"),
+      fromId: v.id("workPackages"),
+      toId: v.id("workPackages"),
+      type: v.union(
+        v.literal("relates"),
+        v.literal("duplicates"),
+        v.literal("blocks"),
+        v.literal("precedes"),
+        v.literal("requires"),
+        v.literal("includes"),
+      ),
+      // Scheduling lag in working days (OpenProject default: 0).
+      lagDays: v.optional(v.number()),
+      createdBy: v.id("users"),
+      createdAt: v.number(),
+    })
+      .index("by_from", ["fromId"])
+      .index("by_to", ["toId"])
+      .index("by_project", ["projectId"]),
+
+    // Watchers — everyone who gets notified when this package changes.
+    wpWatchers: defineTable({
+      projectId: v.id("projects"),
+      workPackageId: v.id("workPackages"),
+      userId: v.id("users"),
+      createdAt: v.number(),
+    })
+      .index("by_wp", ["workPackageId"])
+      .index("by_project", ["projectId"])
+      .index("by_user", ["userId"]),
+
+    // Versions = release goals / milestones (the project Roadmap).
+    projectVersions: defineTable({
+      projectId: v.id("projects"),
+      name: v.string(),
+      description: v.optional(v.string()),
+      status: v.union(v.literal("open"), v.literal("locked"), v.literal("closed")),
+      startAt: v.optional(v.number()),
+      effectiveAt: v.optional(v.number()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_project", ["projectId"]),
+
+    // Time entries logged against a work package (Time & costs module).
+    wpTimeEntries: defineTable({
+      projectId: v.id("projects"),
+      workPackageId: v.id("workPackages"),
+      userId: v.id("users"),
+      hours: v.number(),
+      activity: v.union(
+        v.literal("development"),
+        v.literal("design"),
+        v.literal("testing"),
+        v.literal("documentation"),
+        v.literal("coordination"),
+        v.literal("other"),
+      ),
+      comment: v.optional(v.string()),
+      // The day the work happened (distinct from when it was logged).
+      spentOn: v.number(),
+      createdAt: v.number(),
+    })
+      .index("by_wp", ["workPackageId"])
+      .index("by_project", ["projectId"]),
+
     // ===== Project README (GitHub-style project front page) =====
     // The rendered document itself — one row per project, versioned on save.
     projectReadmes: defineTable({
