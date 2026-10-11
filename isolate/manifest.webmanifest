@@ -1,6 +1,6 @@
 {
-  "name": "RoboShelf — Robotics Club Inventory",
-  "short_name": "RoboShelf",
+  "name": "RC — Robotics Club Inventory",
+  "short_name": "RC",
   "description": "Component rentals, returns and project assemblies for the robotics club.",
   "start_url": "/",
   "display": "standalone",

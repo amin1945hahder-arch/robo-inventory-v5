@@ -1,4 +1,4 @@
-/* RoboShelf service worker — pushes for the wrapped APK/EXE apps and PWA,
+/* RC service worker — pushes for the wrapped APK/EXE apps and PWA,
  * plus the offline app shell (cache-first offline reads of cached pages).
  *
  * Caching strategy (safe for both dev servers and production builds):
@@ -12,7 +12,7 @@
  * The app posts { type: "SHOW_NOTIFICATION", title, body, tag } messages here;
  * real server pushes arrive via the standard "push" event (VAPID web-push). */
 
-const SHELL_CACHE = "roboshelf-shell-v1";
+const SHELL_CACHE = "rc-shell-v1";
 const PRECACHE_URLS = ["/", "/index.html", "/manifest.webmanifest", "/logo.svg"];
 const STATIC_EXT = /\.(js|css|svg|png|jpg|jpeg|gif|webp|avif|ico|woff2?|ttf|otf|json|webmanifest|map|wasm)$/i;
 
@@ -39,10 +39,10 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const names = await caches.keys();
+      // Drop every cache that is not the current shell — including legacy
+      // names from before the rebrand, so no orphaned copy lingers.
       await Promise.all(
-        names
-          .filter((n) => n.startsWith("roboshelf-") && n !== SHELL_CACHE)
-          .map((n) => caches.delete(n)),
+        names.filter((n) => n !== SHELL_CACHE).map((n) => caches.delete(n)),
       );
       await self.clients.claim();
     })(),
@@ -104,9 +104,9 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("message", (event) => {
   const data = event.data || {};
   if (data.type === "SHOW_NOTIFICATION" && self.registration.showNotification) {
-    self.registration.showNotification(data.title || "RoboShelf", {
+    self.registration.showNotification(data.title || "RC", {
       body: data.body || "",
-      tag: data.tag || "roboshelf",
+      tag: data.tag || "rc",
       renotify: Boolean(data.renotify),
       icon: "/logo.svg",
       badge: "/logo.svg",
@@ -133,9 +133,9 @@ self.addEventListener("notificationclick", (event) => {
 
 // Real server pushes (VAPID web-push): payload is { title, body, tag, url }.
 self.addEventListener("push", (event) => {
-  let title = "RoboShelf";
+  let title = "RC";
   let body = "New update in the club inventory";
-  let tag = "roboshelf-push";
+  let tag = "rc-push";
   let url = "/";
   try {
     if (event.data) {
