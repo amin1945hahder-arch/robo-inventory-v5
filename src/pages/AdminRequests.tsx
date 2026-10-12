@@ -9,9 +9,8 @@ import { cn, tabColor } from "@/lib/utils";
 import { AppShell } from "@/components/AppShell";
 import { LoadingGif, LoadingGifInline } from "@/components/LoadingGif";
 import { StatusBadge } from "@/components/StatusBadge";
-import { EditorChip } from "@/components/EditorChip";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -35,7 +34,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { asMessage } from "@/components/EditRentalDialog";
-import { Award, Bell, BellRing, Boxes, CalendarClock, Check, FileText, History, IdCard, Inbox, PackageCheck, PackagePlus, Printer, RotateCcw, ScanLine, Search, SquarePen, Trash2, Warehouse, X } from "lucide-react";
+import { Award, BellRing, Boxes, CalendarClock, Check, History, IdCard, Inbox, PackageCheck, PackagePlus, Printer, RotateCcw, ScanLine, Search, SquarePen, Trash2, Warehouse, X } from "lucide-react";
 import { EditRentalDialog } from "@/components/EditRentalDialog";
 import { EditPackageDialog } from "@/components/EditPackageDialog";
 import { PackageCardDialog } from "@/components/PackageCardDialog";
@@ -69,7 +68,6 @@ const TAB_COUNT: Record<string, string> = {
   ranks: "border-rose-500/40 from-rose-500/25 to-rose-500/10 text-rose-300",
   printers: "border-fuchsia-500/40 from-fuchsia-500/25 to-fuchsia-500/10 text-fuchsia-300",
   profiles: "border-orange-500/40 from-orange-500/25 to-orange-500/10 text-orange-300",
-  readme: "border-indigo-500/40 from-indigo-500/25 to-indigo-500/10 text-indigo-300",
 };
 
 // The SAME per-tab hues as solid fills — the active trigger takes its own
@@ -85,9 +83,8 @@ const TAB_COLORS: Record<string, string> = {
   ranks: "#fb7185",
   printers: "#e879f9",
   profiles: "#fb923c",
-  readme: "#818cf8",
 };
-const tStyle = (tab: string) => tabColor(TAB_COLORS[tab] ?? TAB_COLORS.readme);
+const tStyle = (tab: string) => tabColor(TAB_COLORS[tab] ?? TAB_COLORS.updates);
 
 function TabCount({ tab, n }: { tab: string; n: number }) {
   return (
@@ -107,7 +104,7 @@ export default function AdminRequests() {
   // can jump straight to the matching dedicated tab). Declared first: the
   // per-tab query gating below reads it during render.
   const [tab, setTab] = useState<
-    "updates" | "pending" | "packages" | "pickup" | "active" | "projects" | "history" | "ranks" | "printers" | "profiles" | "readme"
+    "updates" | "pending" | "packages" | "pickup" | "active" | "projects" | "history" | "ranks" | "printers" | "profiles"
   >("updates");
   // ---- Clear history (History tab) ----
   // Independent categories — nothing is deleted unless it is ticked here, and
@@ -132,8 +129,6 @@ export default function AdminRequests() {
   const returnWholePkg = useMutation(api.parts.returnWholePackage);
   const projects = useQuery(api.projects.listProjects, { status: "active" });
   const profileReqs = useQuery(api.notifications.listProfileRequests, { status: "pending" });
-  // Project README edit requests — proposed by members, reviewed in split view.
-  const readmeReqs = useQuery(api.projectReadme.pendingAll, {});
   const decideProfile = useMutation(api.notifications.decideProfileRequest);
   const rankReqs = useQuery(api.users.listRankRequests, { status: "pending" });
   const decideRank = useMutation(api.users.decideRankRequest);
@@ -503,15 +498,6 @@ export default function AdminRequests() {
   const fUnapproved = useMemo(
     () => (search.trim() ? (unapproved ?? []).filter((u: any) => matchesRowText(u)) : unapproved),
     [unapproved, matchesRowText],
-  );
-  const fReadme = useMemo(
-    () =>
-      search.trim()
-        ? (readmeReqs ?? []).filter((r) =>
-            matchesSearch([r.projectName, r.submittedByName, r.submittedByEmail, r.note]),
-          )
-        : readmeReqs,
-    [readmeReqs, search, matchesSearch],
   );
 
   // ---- Updates tab: every NEW request of every kind, newest first ----
@@ -1364,10 +1350,6 @@ export default function AdminRequests() {
               {(profileReqs?.length ?? 0) + (unapproved?.length ?? 0) > 0 && (
                 <TabCount tab="profiles" n={(profileReqs?.length ?? 0) + (unapproved?.length ?? 0)} />
               )}
-            </TabsTrigger>
-            <TabsTrigger value="readme" className="flex-none gap-1.5" style={tStyle("readme")}>
-              README
-              {(readmeReqs?.length ?? 0) > 0 && <TabCount tab="readme" n={readmeReqs?.length ?? 0} />}
             </TabsTrigger>
           </TabsList>
 
@@ -2294,51 +2276,6 @@ export default function AdminRequests() {
                       </div>
                     }
                   />
-                ))}
-              </ul>
-            )}
-          </TabsContent>
-
-          {/* README edit requests — members propose project-README changes;
-              the lead/admin opens the project's split-view review from here. */}
-          <TabsContent value="readme" className="mt-4">
-            {fReadme === undefined ? (
-              <LoadingGif size={48} label={null} />
-            ) : fReadme.length === 0 ? (
-              <p className="rounded-lg border border-dashed px-6 py-12 text-center text-sm text-muted-foreground">
-                {search.trim()
-                  ? "No README requests match your search."
-                  : "No README edit requests — when a member edits a project README, it lands here for you and the lead to review."}
-              </p>
-            ) : (
-              <ul className="divide-y glass-3d rounded-lg border">
-                {fReadme.map((r) => (
-                  <li
-                    key={r._id}
-                    className="flex flex-col gap-3 px-4 py-3 wide:flex-row wide:items-center"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-2 text-sm font-medium">
-                        <FileText className="size-3.5 shrink-0 text-indigo-400" />
-                        {r.projectName} — README edit request
-                      </p>
-                      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                        <EditorChip
-                          name={r.submittedByName}
-                          image={r.submittedByImage}
-                          size="xs"
-                        />
-                        <span>({r.submittedByEmail}) · {new Date(r.requestedAt).toLocaleString("en-GB")}</span>
-                        {r.note && <span>· “{r.note}”</span>}
-                      </p>
-                    </div>
-                    <Link
-                      to={`/projects/${r.projectId}?tab=readme&review=${r._id}`}
-                      className={cn(buttonVariants({ size: "sm" }), "press-3d gap-2")}
-                    >
-                      <SquarePen className="size-3.5" /> Review split view
-                    </Link>
-                  </li>
                 ))}
               </ul>
             )}

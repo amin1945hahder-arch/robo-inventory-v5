@@ -63,8 +63,7 @@ These fields embed base64 in the document. The catastrophic one is `rentals.tran
 | `pages/AdminRequests.tsx:110` | `parts.listAllRentals` history | rentals+joins | `by_status` returned | partial | full row | yes (tab-gated) | `N_returned + joins` | tab open only |
 | `pages/AdminRequests.tsx:111` | `parts.listPackages` | rentalPackages, rentals, groups | **no for `scope:"all"`** | **no — full collect + per-pkg re-query** | full rows | yes | `N_packages × rentals-of-user` | ≈ package writes |
 | `pages/AdminPeople.tsx:306` + `PartDetail.tsx:70` | `notifications.listPeople` | users, rentals | **no (both full)** | **no** | projected user + counts | yes (2 subs) | `N_users + N_rentals` | ≈ rental writes |
-| `pages/ProjectDetail.tsx:242` +2 | `users.listPeopleLite` | users | **no** | **no** | lite users | yes (3 subs) | `N_users` | ≈ user writes |
-| `pages/Projects.tsx:44` + `ProjectDetail` | `projectWorkspace.listSummaries` | projects, projectMembers, projectTasks, users | partial | **no — `projectMembers`/`projectTasks` full `.collect()`** | summaries | yes | `N_members + N_tasks + N_projects` | ≈ task writes |
+| `components/EditRentalDialog.tsx:103` + `EditPackageDialog.tsx:100` | `users.listPeopleLite` | users | **no** | **no** | lite users | yes (2 subs) | `N_users` | ≈ user writes |
 | `pages/Printing3D.tsx:148` | `printing.listJobs` | printJobs, printers, filaments | **no** | **no — full collect** | enriched jobs | yes | `N_jobs` | ≈ print writes |
 | `pages/Printing3D.tsx:149` | `printing.farmStats` | printers, printJobs, filaments | **no** | **no** | aggregates | yes | `N_printers + N_jobs + N_filaments` | ≈ print writes |
 | `pages/Closets.tsx:34,35` / `Inventory.tsx:85,91` etc. | `catalog.listGroups` / `childGroupOptions` | groups | `by_category`/`by_closet` | **no — full collect** | full group docs | yes (6 + 9 subs) | `N_groups` | ≈ group writes |
@@ -90,9 +89,8 @@ Ranked by *(docs per execution × executions/day × bytes per doc)*:
 5. **`notifications.listPeople`** — full `users` **and** full `rentals` scan, 2 subscribers, re-run per rental write.
 6. **`parts.listPackages` (`scope:"all"`)** — full `rentalPackages` collect plus a per-package `rentals` re-query (N+1).
 7. **`printing.listJobs` + `farmStats`** — full `printJobs`/`printers`/`filaments` collects, both subscribed on the print page.
-8. **`projectWorkspace.listSummaries`** — full `projectMembers` + `projectTasks` collects on every Projects view.
-9. **`users.listPeopleLite`** — full `users` collect, 3 subscribers.
-10. **`notifications.unreadCount`** — full `notifications` collect in the admin shell, re-run per notification write, unbounded growth.
+8. **`users.listPeopleLite`** — full `users` collect, 2 subscribers.
+9. **`notifications.unreadCount`** — full `notifications` collect in the admin shell, re-run per notification write, unbounded growth.
 
 Honourable mentions: `catalog.listGroups`/`listClosets`/`listCategories`/`childGroupOptions`/`projects.listProjects` (many subscribers, full collects, but on slow-moving reference tables), `chat.listConversations`/`listPeople`, `labels.getLabelData`, `exportData.*`, `reports.*`.
 

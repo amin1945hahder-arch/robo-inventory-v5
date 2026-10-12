@@ -1,7 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireAdmin, requireNonStudent, requireUser } from "./lib";
-import { internal } from "./_generated/api";
 import { touchPatch, recordTombstone } from "./sync";
 
 export const listProjects = query({
@@ -11,6 +10,31 @@ export const listProjects = query({
     let rows = await ctx.db.query("projects").filter((q) => q.neq(q.field("deleted"), true)).collect();
     if (status) rows = rows.filter((p) => p.status === status);
     return rows.sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
+
+// Projects list with the number of inventory parts currently checked out to
+// each one — the only thing a project holds now.
+export const listProjectsWithCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireUser(ctx);
+    const rows = await ctx.db
+      .query("projects")
+      .filter((q) => q.neq(q.field("deleted"), true))
+      .collect();
+    const parts = await ctx.db
+      .query("parts")
+      .filter((q) => q.neq(q.field("deleted"), true))
+      .collect();
+    const counts = new Map<string, number>();
+    for (const p of parts) {
+      if (!p.currentProjectId) continue;
+      counts.set(p.currentProjectId, (counts.get(p.currentProjectId) ?? 0) + 1);
+    }
+    return rows
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((project) => ({ project, partCount: counts.get(project._id) ?? 0 }));
   },
 });
 

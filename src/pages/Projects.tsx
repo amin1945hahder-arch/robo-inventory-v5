@@ -13,7 +13,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -25,26 +24,15 @@ import { projectQr } from "@/lib/qr";
 import { compressImageFile } from "@/lib/utils";
 import { toast } from "sonner";
 import { asMessage } from "@/components/EditRentalDialog";
-import type { Doc } from "@/convex/_generated/dataModel";
+import { Boxes, FolderKanban, Pencil, Plus } from "lucide-react";
 
-type ProjectRow = Doc<"projects">;
-import {
-  AlertTriangle,
-  FolderKanban,
-  Layers,
-  ListChecks,
-  Pencil,
-  Plus,
-  Users,
-  UserCog,
-  Zap,
-} from "lucide-react";
+type ProjectRow = { _id: string; name: string; description?: string; imageUrl?: string; status: string };
 
 export default function Projects() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const projects = useQuery(api.projects.listProjects, {});
-  const summaries = useQuery(api.projectWorkspace.listSummaries, {});
+  // Each project carries the count of inventory parts currently checked out.
+  const rows = useQuery(api.projects.listProjectsWithCounts, {});
   const upsert = useMutation(api.projects.upsertProject);
   const [open, setOpen] = useState(false);
   // Edit state: which project is being edited (null = creating).
@@ -54,9 +42,8 @@ export default function Projects() {
   const [imageUrl, setImageUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const active = (projects ?? []).filter((p) => p.status === "active");
-  const past = (projects ?? []).filter((p) => p.status !== "active");
-  const summaryOf = (id: string) => (summaries ?? []).find((s) => s.project._id === id);
+  const active = (rows ?? []).filter((r) => r.project.status === "active");
+  const past = (rows ?? []).filter((r) => r.project.status !== "active");
 
   const openCreate = () => {
     setEditing(null);
@@ -94,16 +81,21 @@ export default function Projects() {
     try {
       if (editing) {
         await upsert({
-          id: editing._id,
+          id: editing._id as never,
           name: name.trim(),
           description: description.trim() || undefined,
-          status: editing.status,
+          status: editing.status as "active",
           imageUrl: cover, // "" clears
         });
         toast.success("Project updated");
       } else {
-        await upsert({ name: name.trim(), description: description.trim() || undefined, status: "active", imageUrl: cover || undefined });
-        toast.success("Project created — its workspace is live");
+        await upsert({
+          name: name.trim(),
+          description: description.trim() || undefined,
+          status: "active",
+          imageUrl: cover || undefined,
+        });
+        toast.success("Project created");
       }
       setOpen(false);
       setName("");
@@ -124,8 +116,8 @@ export default function Projects() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Each project is a working center: team, six centers of missions, references and live
-              progress. Parts assigned stay checked out until it's dismantled.
+              A project is a place inventory can be checked out to. Parts stay assigned until the
+              project is dismantled.
             </p>
           </div>
           {isAdmin && (
@@ -135,102 +127,58 @@ export default function Projects() {
           )}
         </header>
 
-        {projects === undefined ? (
+        {rows === undefined ? (
           <LoadingGif size={48} label={null} />
         ) : (
           <>
             <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {active.map((p) => {
-                const s = summaryOf(p._id);
-                const pct = s && s.taskTotal > 0 ? Math.round((s.taskDone / s.taskTotal) * 100) : 0;
-                const wpPct =
-                  s && s.wpTotal > 0 ? Math.round((s.wpDone / s.wpTotal) * 100) : 0;
-                return (
-                  <Card key={p._id} className="group relative overflow-hidden border-border/80 shadow-none transition-colors hover:border-primary/40">
-                    {p.imageUrl && (
-                      <Link to={`/projects/${p._id}`} className="block">
-                        {/* Fixed-height image area (the card never changes
-                            size); the picture fits by its longest side —
-                            contain, never stretched or cropped. */}
-                        <div className="flex h-32 w-full items-center justify-center border-b border-border/60 bg-muted/30">
-                          <img
-                            src={p.imageUrl}
-                            alt={p.name}
-                            className="h-full w-full object-contain"
-                          />
-                        </div>
-                      </Link>
-                    )}
-                    <CardContent className="flex flex-col gap-3 p-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <Link to={`/projects/${p._id}`} className="min-w-0 flex-1">
-                          <p className="truncate text-base font-semibold">{p.name}</p>
-                          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                            {p.description ?? "Club project"}
-                          </p>
-                        </Link>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <QrChip payload={projectQr(p._id)} label={p.name} />
-                          {isAdmin && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-7"
-                              title="Edit project"
-                              onClick={() => openEdit(p)}
-                            >
-                              <Pencil className="size-3.5" />
-                            </Button>
-                          )}
-                        </div>
+              {active.map(({ project: p, partCount }) => (
+                <Card
+                  key={p._id}
+                  className="group relative overflow-hidden border-border/80 shadow-none transition-colors hover:border-primary/40"
+                >
+                  {p.imageUrl && (
+                    <Link to={`/projects/${p._id}`} className="block">
+                      {/* Fixed-height image area (the card never changes
+                          size); the picture fits by its longest side —
+                          contain, never stretched or cropped. */}
+                      <div className="flex h-32 w-full items-center justify-center border-b border-border/60 bg-muted/30">
+                        <img src={p.imageUrl} alt={p.name} className="h-full w-full object-contain" />
                       </div>
-                      <div className="flex items-center gap-2">
-                        <StatusBadge status={p.status} />
-                        {s && s.leaderName && (
-                          <span className="flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
-                            <UserCog className="size-3" /> {s.leaderName}
-                          </span>
+                    </Link>
+                  )}
+                  <CardContent className="flex flex-col gap-3 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <Link to={`/projects/${p._id}`} className="min-w-0 flex-1">
+                        <p className="truncate text-base font-semibold">{p.name}</p>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                          {p.description ?? "Club project"}
+                        </p>
+                      </Link>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <QrChip payload={projectQr(p._id)} label={p.name} />
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            title="Edit project"
+                            onClick={() => openEdit(p)}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
                         )}
                       </div>
-                      <div className="grid gap-1.5">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Users className="size-3" /> {s?.teamSize ?? 0} on team
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <ListChecks className="size-3" /> {s?.taskDone ?? 0}/{s?.taskTotal ?? 0} missions
-                          </span>
-                        </div>
-                        <Progress value={pct} className="h-1.5" />
-                      </div>
-                      {s && s.taskDoing > 0 && (
-                        <p className="flex items-center gap-1 text-[11px] text-primary">
-                          <Zap className="size-3" /> {s.taskDoing} in progress
-                        </p>
-                      )}
-                      {s && s.wpTotal > 0 && (
-                        <div className="grid gap-1.5 border-t border-border/60 pt-2">
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Layers className="size-3" /> {s.wpOpen} open package
-                              {s.wpOpen === 1 ? "" : "s"}
-                            </span>
-                            <span>
-                              {s.wpDone}/{s.wpTotal} closed
-                            </span>
-                          </div>
-                          <Progress value={wpPct} className="h-1.5" />
-                          {s.wpOverdue > 0 && (
-                            <p className="flex items-center gap-1 text-[11px] text-red-400">
-                              <AlertTriangle className="size-3" /> {s.wpOverdue} overdue
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={p.status} />
+                      <span className="flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
+                        <Boxes className="size-3" /> {partCount} part{partCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
               {active.length === 0 && (
                 <div className="col-span-full flex flex-col items-center gap-2 glass-3d rounded-lg border border-dashed px-6 py-12 text-center">
                   <FolderKanban className="size-8 text-muted-foreground" />
@@ -248,12 +196,17 @@ export default function Projects() {
               <section className="flex flex-col gap-3">
                 <h2 className="text-sm font-semibold">Completed &amp; dismantled</h2>
                 <ul className="divide-y glass-3d rounded-lg border">
-                  {past.map((p) => (
+                  {past.map(({ project: p, partCount }) => (
                     <li key={p._id} className="flex items-center justify-between gap-3 px-4 py-3">
                       <Link to={`/projects/${p._id}`} className="truncate text-sm font-medium">
                         {p.name}
                       </Link>
-                      <StatusBadge status={p.status} />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {partCount} part{partCount === 1 ? "" : "s"}
+                        </span>
+                        <StatusBadge status={p.status} />
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -272,7 +225,11 @@ export default function Projects() {
                 <Label>Cover image</Label>
                 <div className="flex items-center gap-3">
                   {imageUrl ? (
-                    <img src={imageUrl} alt="Cover" className="size-16 glass-3d rounded-md border object-contain bg-muted/30" />
+                    <img
+                      src={imageUrl}
+                      alt="Cover"
+                      className="size-16 glass-3d rounded-md border object-contain bg-muted/30"
+                    />
                   ) : (
                     <div className="flex size-16 items-center justify-center glass-3d rounded-md border border-dashed text-xs text-muted-foreground">
                       none
@@ -297,7 +254,12 @@ export default function Projects() {
                       inputMode="url"
                     />
                     {imageUrl && (
-                      <Button variant="ghost" size="sm" className="h-7 self-start text-xs" onClick={() => setImageUrl("")}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 self-start text-xs"
+                        onClick={() => setImageUrl("")}
+                      >
                         Remove image
                       </Button>
                     )}
@@ -306,15 +268,25 @@ export default function Projects() {
               </div>
               <div className="grid gap-2">
                 <Label>Name</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Line Follower 2026" />
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Line Follower 2026"
+                />
               </div>
               <div className="grid gap-2">
                 <Label>Description</Label>
-                <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={2}
+                />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
               <Button onClick={submit} disabled={busy || !name.trim()}>
                 {busy ? "Saving…" : editing ? "Save changes" : "Create"}
               </Button>

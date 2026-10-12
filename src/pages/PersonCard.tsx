@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { LoadingGifInline } from "@/components/LoadingGif";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { useMutation } from "convex/react";
 import { useOfflineQuery as useQuery } from "@/hooks/use-offline-query";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/AppShell";
@@ -12,7 +11,6 @@ import { tabColor } from "@/lib/utils";
 const TAB_COLORS: Record<string, string> = {
   info: "#38bdf8",
   records: "#fbbf24",
-  projects: "#34d399",
   positions: "#a78bfa",
 };
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -25,15 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from "sonner";
-import {
-  BadgeCheck,
-  FolderKanban,
-  IdCard,
-  Loader2,
-  Pencil,
-  UserRound,
-} from "lucide-react";
+import { BadgeCheck, IdCard, Pencil, UserRound } from "lucide-react";
 import { PersonBadgeDialog } from "@/components/PersonBadgeDialog";
 import QRCodeReact from "react-qr-code";
 import { qrUrl, personQr } from "@/lib/qr";
@@ -45,23 +35,13 @@ type PersonCardData = {
   canSeeHistory: boolean;
   isSelf: boolean;
   viewerIsAdmin: boolean;
-  projects: {
-    _id: string;
-    name: string;
-    status: string;
-    role: string;
-    center?: string;
-    addedAt?: number;
-    unitsOnProject: number;
-  }[];
-  totalUnitsOnProject: number;
   rentals: any[];
 };
 
 /** Person profile — opened by scanning a person QR label (person:<id>) or via
  *  "view profile" on the scan popup. Structured tabs: info, lend records,
- *  projects, positions. Self and admins see everything; other members get a
- *  limited public view. */
+ *  positions. Self and admins see everything; other members get a limited
+ *  public view. */
 export default function PersonCard() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -191,11 +171,6 @@ export default function PersonCard() {
               </TabsTrigger>
             )}
             {fullView && (
-              <TabsTrigger value="projects" style={tabColor(TAB_COLORS.projects)}>
-                Projects
-              </TabsTrigger>
-            )}
-            {fullView && (
               <TabsTrigger value="positions" style={tabColor(TAB_COLORS.positions)}>
                 Positions
               </TabsTrigger>
@@ -313,48 +288,6 @@ export default function PersonCard() {
                     </li>
                   ))}
                 </ul>
-              )}
-            </TabsContent>
-          )}
-
-          {/* ---- Projects ---- */}
-          {fullView && (
-            <TabsContent value="projects" className="mt-4">
-              {card.projects.length === 0 ? (
-                <p className="rounded-lg border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
-                  Not on any project team.
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {card.projects.map((pr) => (
-                    <li
-                      key={pr._id}
-                      className="flex flex-wrap items-center gap-3 glass-3d rounded-lg border px-4 py-3"
-                    >
-                      <FolderKanban className="size-4 shrink-0 text-violet-400" />
-                      <div className="min-w-0 flex-1">
-                        <Link
-                          to={`/projects/${pr._id}`}
-                          className="truncate text-sm font-medium hover:underline"
-                        >
-                          {pr.name}
-                        </Link>
-                        <p className="text-xs text-muted-foreground">
-                          {pr.role === "leader" ? "Team leader" : "Member"}
-                          {pr.center ? ` · ${pr.center}` : ""}
-                          {pr.unitsOnProject > 0 ? ` · ${pr.unitsOnProject} unit(s) checked out` : ""}
-                          {pr.addedAt ? ` · joined ${new Date(pr.addedAt).toLocaleDateString()}` : ""}
-                        </p>
-                      </div>
-                      <StatusBadge status={pr.status === "active" ? "active" : pr.status} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {card.totalUnitsOnProject > 0 && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  Currently holds {card.totalUnitsOnProject} unit(s) from the inventory.
-                </p>
               )}
             </TabsContent>
           )}
