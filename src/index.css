@@ -513,6 +513,10 @@ html:not(.dark) .neon-glow {
   --animate-glint: glint-x 3.8s ease-in-out infinite;
   --animate-gear: gear-cw 18s linear infinite;
   --animate-gear-rev: gear-ccw 12s linear infinite;
+  /* Gyroscopic aperture rotors (landing separator): slow enough that the eye
+     reads inertia, not animation. */
+  --animate-gyro: gear-cw 64s linear infinite;
+  --animate-gyro-rev: gear-ccw 46s linear infinite;
 }
 
 @keyframes marquee-x {
@@ -647,7 +651,9 @@ html:not(.dark) .neon-glow {
   .animate-laser,
   .animate-glint,
   .animate-gear,
-  .animate-gear-rev {
+  .animate-gear-rev,
+  .animate-gyro,
+  .animate-gyro-rev {
     animation: none !important;
   }
   html {

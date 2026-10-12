@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AnimatePresence,
   MotionConfig,
@@ -322,276 +322,190 @@ function Gear({ className, teeth = 12 }: { className?: string; teeth?: number })
       <GearShape teeth={teeth} />
     </svg>
   );
-}
+}/**
+ * The signature separator — an instrument-grade rail, not a doodle.
+ *
+ * A hairline datum rail carries a three-tier vernier scale: graduations
+ * every 12 units, longer every 60, longest every 300 across a 1200-unit
+ * span. On the datum sits a gyroscopic aperture — concentric hairlines, an
+ * outer blade rotor turning one way, an inner hub rotor turning the other,
+ * an index crosshair — and one soft specular glint travels the rail.
+ *
+ * Every reveal is a transform sweep off a single node per tier, and the
+ * idle state is still geometry: nothing shimmers, re-dashes or jitters, and
+ * the rotors are slow enough to read as inertia rather than animation.
+ */
+const RAIL_W = 1200;
+const RAIL_Y = 32;
+
+/** Graduation geometry per tier — step, half-height, ink, weight, delay. */
+const RAIL_TIERS = {
+  minor: { step: 12, len: 6, opacity: 0.24, width: 1, delay: 0.1 },
+  medium: { step: 60, len: 11, opacity: 0.42, width: 1, delay: 0.26 },
+  major: { step: 300, len: 17, opacity: 0.62, width: 1.25, delay: 0.42 },
+} as const;
+
+const RAIL_TIER_KEYS = ["minor", "medium", "major"] as const;
+type RailTier = (typeof RAIL_TIER_KEYS)[number];
 
 /**
- * The signature separator: a PCB schematic that solders itself together as
- * it scrolls into view — a resistor zigzag, right-angle jogs, corner vias,
- * junction pads, a shunt capacitor to ground, and a real IC package whose
- * gull-wing leads end on proper solder pads on the bus. A mechanical gear
- * drives each end. After the draw, TWO glowing signals run the wire in
- * opposite directions, forever.
+ * One path holding every graduation of a tier — a coarser tier keeps the
+ * positions it owns, so the scale never double-draws a tick. One node per
+ * tier means the reveal is a single transform, not a hundred.
  */
-const TRACE_D =
-  "M64 64 H150 l9 -12 l9 24 l9 -24 l9 24 l9 -12 H300 V82 H364 V64 H600 V42 H660 V64 H736";
+function railGraduations(tier: RailTier) {
+  const { step, len } = RAIL_TIERS[tier];
+  const owned = tier === "minor" ? 60 : tier === "medium" ? 300 : RAIL_W;
+  const d: string[] = [];
+  for (let x = step; x <= RAIL_W - step; x += step) {
+    if (x % owned === 0) continue;
+    d.push(`M${x} ${RAIL_Y - len}V${RAIL_Y + len}`);
+  }
+  return d.join("");
+}
 
-/** Lead positions for the IC — each lands on its own solder pad on the bus. */
-const IC_LEADS = [478, 494, 510, 526];
+/** A rotor: `blades` spokes between two radii, as one path. */
+function railRotor(blades: number, inner: number, outer: number) {
+  const d: string[] = [];
+  for (let i = 0; i < blades; i++) {
+    const a = (i / blades) * Math.PI * 2;
+    const x1 = (Math.cos(a) * inner).toFixed(2);
+    const y1 = (Math.sin(a) * inner).toFixed(2);
+    const x2 = (Math.cos(a) * outer).toFixed(2);
+    const y2 = (Math.sin(a) * outer).toFixed(2);
+    d.push(`M${x1} ${y1}L${x2} ${y2}`);
+  }
+  return d.join("");
+}
 
-function CircuitTrace({ className, reverse = false }: { className?: string; reverse?: boolean }) {
-  const pads: [number, number][] = [[420, 64]];
-  const rings: [number, number][] = [
-    [240, 40],
-    [420, 86],
-  ];
-  const vias: [number, number][] = [
-    [300, 82],
-    [364, 82],
-    [600, 42],
-    [660, 42],
-  ];
-  const inView = { once: true, margin: "-60px" } as const;
-  const pop = (i: number) => ({
-    initial: { scale: 0 as const, opacity: 0 },
-    whileInView: { scale: 1, opacity: 1 },
+export function PrecisionRail({ className, reverse = false }: { className?: string; reverse?: boolean }) {
+  // Two rails on one page (one reversed) — derive the gradient ids from this
+  // instance, stripped to characters that are safe inside `url(#…)`.
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const inView = { once: true, margin: "-80px" } as const;
+  const ease = [0.22, 1, 0.36, 1] as const;
+  const graduations = useMemo(
+    () => RAIL_TIER_KEYS.map((tier) => ({ tier, d: railGraduations(tier) })),
+    [],
+  );
+  const rotors = useMemo(
+    () => ({ outer: railRotor(10, 6, 13), inner: railRotor(6, 2.6, 5.6) }),
+    [],
+  );
+  // A scale-from-the-left wipe per tier. A transform beats a dash reveal:
+  // it is raster-stable at every width and snaps straight to its end state
+  // when the member asks their OS to reduce motion.
+  const wipe = (delay: number) => ({
+    initial: { scaleX: 0, opacity: 0 },
+    whileInView: { scaleX: 1, opacity: 1 },
     viewport: inView,
-    style: { transformBox: "fill-box" as const, transformOrigin: "center" },
-    transition: { delay: 1.35 + i * 0.1, type: "spring" as const, stiffness: 320, damping: 18 },
+    style: { transformBox: "fill-box" as const, transformOrigin: "left center" },
+    transition: { duration: 1.05, delay, ease },
   });
 
   return (
-    <div className={cn("relative z-10 mx-auto w-full max-w-5xl px-6", className)} aria-hidden>
-      <svg viewBox="0 0 800 96" fill="none" className="w-full text-primary">
-        {/* the bus draws itself, left to right */}
-        <motion.path
-          d={TRACE_D}
-          stroke="currentColor"
-          strokeOpacity={0.5}
-          strokeWidth={2}
-          strokeLinejoin="round"
-          initial={{ pathLength: 0, opacity: 0 }}
-          whileInView={{ pathLength: 1, opacity: 1 }}
-          viewport={inView}
-          transition={{ duration: 1.8, ease: "easeInOut" }}
-        />
-
-        {/* branch stubs with pads — drawn after the bus reaches them */}
-        <motion.path
-          d="M240 64 V40"
-          stroke="currentColor"
-          strokeOpacity={0.5}
-          strokeWidth={2}
-          initial={{ pathLength: 0 }}
-          whileInView={{ pathLength: 1 }}
-          viewport={inView}
-          transition={{ duration: 0.4, delay: 0.9 }}
-        />
-        <motion.path
-          d="M420 64 V86"
-          stroke="currentColor"
-          strokeOpacity={0.5}
-          strokeWidth={2}
-          initial={{ pathLength: 0 }}
-          whileInView={{ pathLength: 1 }}
-          viewport={inView}
-          transition={{ duration: 0.4, delay: 1.15 }}
-        />
-
-        {/* shunt capacitor to ground — plates, leads and a ground symbol */}
-        <motion.g {...pop(6)} stroke="currentColor" strokeWidth={2} strokeOpacity={0.75}>
-          <path d="M580 64 V74" />
-          <path d="M571 74 H589" strokeWidth={2.6} />
-          <path d="M571 78 H589" strokeWidth={2.6} />
-          <path d="M580 78 V87" />
-          <path d="M573 87 H587" />
-          <path d="M576 90 H584" />
-          <path d="M579 93 H581" />
-        </motion.g>
-
-        {/* IC package: body, pin-1 index, gull-wing leads into solder pads */}
-        <motion.g {...pop(0)}>
-          <rect
-            x={468}
-            y={8}
-            width={64}
-            height={30}
-            rx={4}
-            fill="currentColor"
-            fillOpacity={0.1}
-            stroke="currentColor"
-            strokeOpacity={0.78}
-            strokeWidth={2}
-          />
-          <circle cx={478} cy={18} r={2.2} fill="currentColor" fillOpacity={0.7} />
-          <text
-            x={502}
-            y={31}
-            fontSize={8}
-            fontFamily="monospace"
-            textAnchor="middle"
-            fill="currentColor"
-            opacity={0.6}
+    <div className={cn("relative z-10 mx-auto w-full max-w-6xl px-6", className)} aria-hidden>
+      <svg viewBox={`0 0 ${RAIL_W} 64`} fill="none" className="w-full text-primary">
+        <defs>
+          <linearGradient
+            id={`rail-${uid}`}
+            gradientUnits="userSpaceOnUse"
+            x1={0}
+            y1={0}
+            x2={RAIL_W}
+            y2={0}
           >
-            RC-01
-          </text>
-          {IC_LEADS.map((x) => (
-            <g key={x}>
-              <line
-                x1={x}
-                y1={38}
-                x2={x}
-                y2={54}
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeOpacity={0.85}
-              />
-              <rect
-                x={x - 3.5}
-                y={54}
-                width={7}
-                height={10}
-                rx={1.4}
-                fill="currentColor"
-                fillOpacity={0.18}
-                stroke="currentColor"
-                strokeOpacity={0.85}
-                strokeWidth={1.6}
-              />
-            </g>
-          ))}
-        </motion.g>
+            <stop offset="0" stopColor="currentColor" stopOpacity="0" />
+            <stop offset="0.14" stopColor="currentColor" stopOpacity="0.4" />
+            <stop offset="0.5" stopColor="currentColor" stopOpacity="0.7" />
+            <stop offset="0.86" stopColor="currentColor" stopOpacity="0.4" />
+            <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id={`glint-${uid}`} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="currentColor" stopOpacity="0" />
+            <stop offset="0.5" stopColor="currentColor" stopOpacity="0.55" />
+            <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+          </linearGradient>
+        </defs>
 
-        {/* junction dots, ring pads, vias — they pop in as the wire arrives */}
-        {pads.map(([cx, cy], i) => (
-          <motion.circle key={`p${cx}`} cx={cx} cy={cy} r={4} fill="currentColor" {...pop(i + 1)} />
-        ))}
-        {rings.map(([cx, cy], i) => (
-          <motion.circle
-            key={`r${cx}`}
-            cx={cx}
-            cy={cy}
-            r={5}
+        {/* the datum rail */}
+        <motion.path
+          d={`M0 ${RAIL_Y}H${RAIL_W}`}
+          stroke={`url(#rail-${uid})`}
+          strokeWidth={1.25}
+          {...wipe(0)}
+        />
+
+        {/* vernier scale — three tiers sweeping in behind the rail */}
+        {graduations.map(({ tier, d }) => (
+          <motion.path
+            key={tier}
+            d={d}
             stroke="currentColor"
-            strokeWidth={2.5}
-            {...pop(i + 3)}
+            strokeWidth={RAIL_TIERS[tier].width}
+            strokeOpacity={RAIL_TIERS[tier].opacity}
+            {...wipe(RAIL_TIERS[tier].delay)}
           />
         ))}
-        {vias.map(([cx, cy], i) => (
-          <motion.g key={`v${cx}`} {...pop(i + 5)}>
-            <circle cx={cx} cy={cy} r={6} stroke="currentColor" strokeWidth={2} strokeOpacity={0.8} />
-            <circle cx={cx} cy={cy} r={2.5} fill="currentColor" />
+
+        {/* the aperture on the datum: rings, two rotors, an index crosshair */}
+        <g transform={`translate(${RAIL_W / 2} ${RAIL_Y})`}>
+          <motion.g
+            initial={{ opacity: 0, scale: 0.88 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={inView}
+            style={{ transformBox: "fill-box" as const, transformOrigin: "center" }}
+            transition={{ duration: 0.8, delay: 0.5, ease }}
+          >
+            <circle r={21} stroke="currentColor" strokeOpacity={0.2} />
+            <circle r={15} stroke="currentColor" strokeOpacity={0.38} />
+            <circle r={5.6} stroke="currentColor" strokeOpacity={0.5} />
+            <path
+              d={rotors.outer}
+              className="animate-gyro [transform-box:fill-box] [transform-origin:center]"
+              stroke="currentColor"
+              strokeOpacity={0.55}
+              strokeWidth={1.1}
+            />
+            <path
+              d={rotors.inner}
+              className="animate-gyro-rev [transform-box:fill-box] [transform-origin:center]"
+              stroke="currentColor"
+              strokeOpacity={0.7}
+              strokeWidth={1.1}
+            />
+            <path
+              d="M0 -30V-23 M0 23V30"
+              stroke="currentColor"
+              strokeOpacity={0.28}
+              strokeWidth={1.25}
+            />
+            <circle r={1.3} fill="currentColor" fillOpacity={0.75} />
           </motion.g>
-        ))}
-
-        {/* schematic annotations */}
-        <motion.text
-          x={70}
-          y={50}
-          fontSize={10}
-          fontFamily="monospace"
-          fill="currentColor"
-          opacity={0.55}
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 0.55 }}
-          viewport={inView}
-          transition={{ delay: 1.5 }}
-        >
-          RC-BUS
-        </motion.text>
-        <motion.text
-          x={568}
-          y={40}
-          fontSize={9}
-          fontFamily="monospace"
-          fill="currentColor"
-          opacity={0.55}
-          textAnchor="end"
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 0.55 }}
-          viewport={inView}
-          transition={{ delay: 1.6 }}
-        >
-          U1
-        </motion.text>
-        <motion.text
-          x={596}
-          y={92}
-          fontSize={9}
-          fontFamily="monospace"
-          fill="currentColor"
-          opacity={0.55}
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 0.55 }}
-          viewport={inView}
-          transition={{ delay: 1.7 }}
-        >
-          GND
-        </motion.text>
-        <motion.text
-          x={736}
-          y={50}
-          fontSize={10}
-          fontFamily="monospace"
-          fill="currentColor"
-          opacity={0.55}
-          textAnchor="end"
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 0.55 }}
-          viewport={inView}
-          transition={{ delay: 1.6 }}
-        >
-          I²C
-        </motion.text>
-
-        {/* mechanical gears driving the bus at both ends (meshed module) */}
-        <g transform="translate(38 64) scale(0.55)">
-          <g className="animate-gear [transform-box:fill-box] [transform-origin:center]">
-            <GearShape teeth={12} />
-          </g>
-        </g>
-        <g transform="translate(760 64) scale(0.6)">
-          <g className="animate-gear-rev [transform-box:fill-box] [transform-origin:center]">
-            <GearShape teeth={9} />
-          </g>
         </g>
 
-        {/* two glowing signals running the wire in opposite directions */}
-        <motion.path
-          d={TRACE_D}
-          stroke="currentColor"
-          strokeWidth={3.5}
-          strokeLinecap="round"
-          pathLength={1}
-          strokeDasharray="0.035 0.965"
-          style={{ filter: "drop-shadow(0 0 6px currentColor)" }}
-          initial={{ strokeDashoffset: reverse ? 0 : 1, opacity: 0 }}
-          whileInView={{ strokeDashoffset: reverse ? 1 : 0, opacity: 1 }}
-          viewport={inView}
+        {/* one specular glint travelling the rail */}
+        <motion.rect
+          y={RAIL_Y - 15}
+          width={240}
+          height={30}
+          fill={`url(#glint-${uid})`}
+          initial={{ x: reverse ? RAIL_W + 40 : -280 }}
+          animate={{ x: reverse ? -280 : RAIL_W + 40 }}
           transition={{
-            strokeDashoffset: { duration: 2.4, repeat: Infinity, ease: "linear", delay: 1.6 },
-            opacity: { duration: 0.4, delay: 1.6 },
-          }}
-        />
-        <motion.path
-          d={TRACE_D}
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          pathLength={1}
-          strokeDasharray="0.018 0.982"
-          style={{ filter: "drop-shadow(0 0 4px currentColor)" }}
-          initial={{ strokeDashoffset: reverse ? 1 : 0, opacity: 0 }}
-          whileInView={{ strokeDashoffset: reverse ? 0 : 1, opacity: 0.65 }}
-          viewport={inView}
-          transition={{
-            strokeDashoffset: { duration: 3.4, repeat: Infinity, ease: "linear", delay: 2.5 },
-            opacity: { duration: 0.4, delay: 2.5 },
+            duration: 3.6,
+            repeat: Infinity,
+            repeatDelay: 2.4,
+            ease: "linear",
+            delay: 1.4,
           }}
         />
       </svg>
     </div>
   );
 }
+
+
 
 function ScanDemo() {
   const ref = useRef<HTMLDivElement>(null);
@@ -1232,8 +1146,8 @@ export default function Landing() {
           <MarqueeRow items={[...TICKER].reverse()} reverse />
         </section>
 
-        {/* signature PCB trace — draws itself, then signals forever */}
-        <CircuitTrace className="pt-6" />
+        {/* signature precision rail — a calibration sweep, not a doodle */}
+        <PrecisionRail className="pt-6" />
 
         {/* ── try it (interactive scan + search demos) ────────────── */}
         <TrySection />
@@ -1262,7 +1176,7 @@ export default function Landing() {
         {/* ── voices from clubs already running it ────────────────── */}
         <Testimonials />
 
-        <CircuitTrace className="pt-8" reverse />
+        <PrecisionRail className="pt-8" reverse />
 
         {/* ── CTA ─────────────────────────────────────────────────── */}
         <CtaSection
