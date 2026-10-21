@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">RC</string>
-    <string name="title_activity_main">RC</string>
-    <string name="package_name">club.rc.app</string>
-    <string name="custom_url_scheme">club.rc.app</string>
-</resources>
