@@ -1,177 +1,178 @@
-name: Build apps (Android + Desktop)
-
-# Produces downloadable installers:
-#   - Android:  RoboShelf-debug.apk  (+ RoboShelf-release.apk when a keystore is configured)
-#   - Windows:  RoboShelf-Setup-<ver>-x64.exe / -arm64.exe
-#   - Linux:    RoboShelf-<ver>-<arch>.AppImage and .deb
+#name: Build apps (Android + Desktop)
 #
-# Trigger it manually from the Actions tab, or push a tag like `v1.0.0` to also
-# publish everything to a GitHub Release (which is what makes the files easy to
-# download from the repo).
-
-on:
-  workflow_dispatch:
-  push:
-    tags:
-      - "v*"
-
-permissions:
-  contents: write
-
-# The Vite build inlines VITE_CONVEX_URL at build time, so the CI build needs
-# the same public Convex URL the app uses. Set a repo *variable* named
-# VITE_CONVEX_URL to override; otherwise the known production URL is used.
-env:
-  VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL || 'https://agreeable-firefly-466.convex.cloud' }}
-  VLY_INTEGRATION_KEY: ${{ secrets.VLY_INTEGRATION_KEY }}
-
-jobs:
-  # ---------------------------------------------------------------------------
-  # Android APK (Capacitor)
-  # ---------------------------------------------------------------------------
-  android:
-    name: Android APK
-    runs-on: ubuntu-latest
-    env:
-      # Drives the signing steps below without putting a secret in an `if`.
-      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - uses: android-actions/setup-android@v3
-        with:
-            packages: 'platform-tools'
-
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build web bundle (dist/)
-        run: bun run build
-
-      - name: Sync web bundle into the Android project
-        run: npx cap sync android
-
-      - name: Decode release keystore
-        if: env.HAS_KEYSTORE == 'true'
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
-          cat > android/keystore.properties <<EOF
-          storeFile=${{ github.workspace }}/android/app/release.keystore
-          storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          EOF
-
-      - name: Build APK (debug, always)
-        working-directory: android
-        env:
-          VERSION_CODE: ${{ github.run_number }}
-          VERSION_NAME: ${{ github.ref_name }}
-        run: |
-          chmod +x ./gradlew
-          ./gradlew --no-daemon assembleDebug
-
-      - name: Build APK (release, when signed)
-        if: env.HAS_KEYSTORE == 'true'
-        working-directory: android
-        env:
-          VERSION_CODE: ${{ github.run_number }}
-          VERSION_NAME: ${{ github.ref_name }}
-        run: ./gradlew --no-daemon assembleRelease
-
-      - name: Collect APKs
-        run: |
-          mkdir -p out
-          cp android/app/build/outputs/apk/debug/app-debug.apk out/RoboShelf-debug.apk
-          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk out/RoboShelf-release.apk
-          fi
-          ls -la out
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android-apk
-          path: out/*.apk
-          if-no-files-found: error
-
-  # ---------------------------------------------------------------------------
-  # Desktop installers (Electron)
-  # ---------------------------------------------------------------------------
-  desktop:
-    name: Desktop (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            target: --win
-            artifact: desktop-windows
-          - os: ubuntu-latest
-            target: --linux
-            artifact: desktop-linux
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build web bundle (dist/)
-        run: bun run build
-
-      - name: Install Electron tooling
-        working-directory: desktop
-        run: npm install
-
-      - name: Build installers
-        working-directory: desktop
-        run: npx electron-builder ${{ matrix.target }} --publish never
-
-      - name: List built installers
-        shell: bash
-        working-directory: desktop
-        run: ls -la release || true
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: |
-            desktop/release/*.exe
-            desktop/release/*.AppImage
-            desktop/release/*.deb
-          if-no-files-found: error
-
-  # ---------------------------------------------------------------------------
-  # Publish everything to a GitHub Release (tags only)
-  # ---------------------------------------------------------------------------
-  release:
-    name: Publish release
-    needs: [android, desktop]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: Show collected files
-        run: ls -laR artifacts
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/**/*
-          generate_release_notes: true
+## Produces downloadable installers:
+##   - Android:  RoboShelf-debug.apk  (+ RoboShelf-release.apk when a keystore is configured)
+##   - Windows:  RoboShelf-Setup-<ver>-x64.exe / -arm64.exe
+##   - Linux:    RoboShelf-<ver>-<arch>.AppImage and .deb
+##
+## Trigger it manually from the Actions tab, or push a tag like `v1.0.0` to also
+## publish everything to a GitHub Release (which is what makes the files easy to
+## download from the repo).
+#
+#on:
+#  workflow_dispatch:
+#  push:
+#    tags:
+#      - "v*"
+#
+#permissions:
+#  contents: write
+#
+## The Vite build inlines VITE_CONVEX_URL at build time, so the CI build needs
+## the same public Convex URL the app uses. Set a repo *variable* named
+## VITE_CONVEX_URL to override; otherwise the known production URL is used.
+#env:
+#  VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL || 'https://agreeable-firefly-466.convex.cloud' }}
+#  VLY_INTEGRATION_KEY: ${{ secrets.VLY_INTEGRATION_KEY }}
+#
+#jobs:
+#  # ---------------------------------------------------------------------------
+#  # Android APK (Capacitor)
+#  # ---------------------------------------------------------------------------
+#  android:
+#    name: Android APK
+#    runs-on: ubuntu-latest
+#    env:
+#      # Drives the signing steps below without putting a secret in an `if`.
+#      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+#    steps:
+#      - uses: actions/checkout@v4
+#
+#      - uses: oven-sh/setup-bun@v2
+#        with:
+#          bun-version: latest
+#
+#      - uses: actions/setup-java@v4
+#        with:
+#          distribution: temurin
+#          java-version: "21"
+#
+#      - uses: android-actions/setup-android@v3
+#        with:
+#            packages: 'platform-tools'
+#
+#      - name: Install JS dependencies
+#        run: bun install --frozen-lockfile
+#
+#      - name: Build web bundle (dist/)
+#        run: bun run build
+#
+#      - name: Sync web bundle into the Android project
+#        run: npx cap sync android
+#
+#      - name: Decode release keystore
+#        if: env.HAS_KEYSTORE == 'true'
+#        run: |
+#          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+#          cat > android/keystore.properties <<EOF
+#          storeFile=${{ github.workspace }}/android/app/release.keystore
+#          storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
+#          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+#          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+#          EOF
+#
+#      - name: Build APK (debug, always)
+#        working-directory: android
+#        env:
+#          VERSION_CODE: ${{ github.run_number }}
+#          VERSION_NAME: ${{ github.ref_name }}
+#        run: |
+#          chmod +x ./gradlew
+#          ./gradlew --no-daemon assembleDebug
+#
+#      - name: Build APK (release, when signed)
+#        if: env.HAS_KEYSTORE == 'true'
+#        working-directory: android
+#        env:
+#          VERSION_CODE: ${{ github.run_number }}
+#          VERSION_NAME: ${{ github.ref_name }}
+#        run: ./gradlew --no-daemon assembleRelease
+#
+#      - name: Collect APKs
+#        run: |
+#          mkdir -p out
+#          cp android/app/build/outputs/apk/debug/app-debug.apk out/RoboShelf-debug.apk
+#          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+#            cp android/app/build/outputs/apk/release/app-release.apk out/RoboShelf-release.apk
+#          fi
+#          ls -la out
+#
+#      - uses: actions/upload-artifact@v4
+#        with:
+#          name: android-apk
+#          path: out/*.apk
+#          if-no-files-found: error
+#
+#  # ---------------------------------------------------------------------------
+#  # Desktop installers (Electron)
+#  # ---------------------------------------------------------------------------
+#  desktop:
+#    name: Desktop (${{ matrix.os }})
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        include:
+#          - os: windows-latest
+#            target: --win
+#            artifact: desktop-windows
+#          - os: ubuntu-latest
+#            target: --linux
+#            artifact: desktop-linux
+#    runs-on: ${{ matrix.os }}
+#    steps:
+#      - uses: actions/checkout@v4
+#
+#      - uses: oven-sh/setup-bun@v2
+#        with:
+#          bun-version: latest
+#
+#      - name: Install JS dependencies
+#        run: bun install --frozen-lockfile
+#
+#      - name: Build web bundle (dist/)
+#        run: bun run build
+#
+#      - name: Install Electron tooling
+#        working-directory: desktop
+#        run: npm install
+#
+#      - name: Build installers
+#        working-directory: desktop
+#        run: npx electron-builder ${{ matrix.target }} --publish never
+#
+#      - name: List built installers
+#        shell: bash
+#        working-directory: desktop
+#        run: ls -la release || true
+#
+#      - uses: actions/upload-artifact@v4
+#        with:
+#          name: ${{ matrix.artifact }}
+#          path: |
+#            desktop/release/*.exe
+#            desktop/release/*.AppImage
+#            desktop/release/*.deb
+#          if-no-files-found: error
+#
+#  # ---------------------------------------------------------------------------
+#  # Publish everything to a GitHub Release (tags only)
+#  # ---------------------------------------------------------------------------
+#  release:
+#    name: Publish release
+#    needs: [android, desktop]
+#    if: startsWith(github.ref, 'refs/tags/')
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/download-artifact@v4
+#        with:
+#          path: artifacts
+#          merge-multiple: true
+#
+#      - name: Show collected files
+#        run: ls -laR artifacts
+#
+#      - uses: softprops/action-gh-release@v2
+#        with:
+#          files: artifacts/**/*
+#          generate_release_notes: true
+#
